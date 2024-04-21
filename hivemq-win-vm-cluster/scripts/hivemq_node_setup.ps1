@@ -1,7 +1,7 @@
 # ARM/Bicep Template parameters
 param (
     [string]$hivemqVersion,
-    [string]$storageAccessKey,
+    [string]$storageConnectionString,
     [string]$storageBlobContainerName
 )
 
@@ -22,6 +22,11 @@ $links = @{
     NSSM_Link = "https://nssm.cc/release/nssm-2.24.zip"
     MQTTCLI_Link = "https://github.com/hivemq/mqtt-cli/releases/download/v$hivemqVersion/mqtt-cli-$hivemqVersion-win.zip"
 }
+
+# Log everything from the PowerShell script session to a file
+$hostname = hostname
+$datetime = Get-Date -f 'yyyyMMddHHmmss'
+Start-Transcript -Path "C:\hivemq\azure-deploy\azure-deploy-${hostname}-${datetime}.log" | Out-Null
 
 # Test download links
 Write-Host "1) Testing download links availability..."
@@ -124,6 +129,7 @@ $configContent = @"
             <bind-address>0.0.0.0</bind-address>
         </tcp-listener>
     </listeners>
+    <!-- Enable HiveMQ clustering -->
     <cluster>
         <enabled>true</enabled>
         <transport>
@@ -132,6 +138,7 @@ $configContent = @"
                 <bind-port>7800</bind-port>
             </tcp>
         </transport>
+        <!-- HiveMQ Azure Cluster Discovery Extension -->
         <discovery>
             <extension/>
         </discovery>
@@ -183,7 +190,7 @@ try {
 #
 # The connection string of your Azure Storage Account. (required)
 # See https://docs.microsoft.com/de-de/com.hivemq.extensions.azure/storage/common/storage-configure-connection-string for more information.
-connection-string=$storageAccessKey
+connection-string=$storageConnectionString
 # The name of the Azure Storage Container in which the Blob for the discovery will be created in. (default: hivemq-discovery)
 # If the Container does not exist yet, it will be created by the extension.
 container-name=$storageBlobContainerName
@@ -247,21 +254,30 @@ Write-Host "7) Opening required ports in Windows Defender Firewall..."
 $rules = @(
     @{
         DisplayName = "HiveMQ MQTT Port 1883"
-        Description = "This rule allows inbound TCP connections on port 1883 for HiveMQ Broker. Port 1883 is used for non-TLS MQTT communication. The rule is applicable across Domain, and Private profiles to support both internal and external MQTT client connections."
+        Description = "This rule allows inbound TCP connections on port 1883 for HiveMQ Broker. Port 1883 is used for non-TLS MQTT communication. The rule is applicable across Public profile to support both internal and external MQTT client connections."
         Direction = "Inbound"
         Protocol = "TCP"
         LocalPort = 1883
         Action = "Allow"
-        Profile = "Domain, Private"
+        Profile = "Public"
     },
     @{
         DisplayName = "HiveMQ Control Center Port 8080"
-        Description = "This rule allows inbound TCP connections on port 8080 for HiveMQ Control Center. Port 8080 is used for plain HTTP communication. The rule is applicable across Domain, and Private profiles to support both internal and external HTTP connections."
+        Description = "This rule allows inbound TCP connections on port 8080 for HiveMQ Control Center. Port 8080 is used for plain HTTP communication. The rule is applicable across Public profile to support both internal and external HTTP connections."
         Direction = "Inbound"
         Protocol = "TCP"
         LocalPort = 8080
         Action = "Allow"
-        Profile = "Domain, Private"
+        Profile = "Public"
+    }
+    @{
+        DisplayName = "HiveMQ Cluster Transport Port 7800"
+        Description = "This rule allows inbound TCP connections on port 7800 for the HiveMQ Cluster Transport. Port 7800 is used for inter-node communication within a HiveMQ cluster. The rule is applicable across Public profile for ensuring uninterrupted cluster operations."
+        Direction = "Inbound"
+        Protocol = "TCP"
+        LocalPort = 7800
+        Action = "Allow"
+        Profile = "Public"
     }
 )
 foreach ($rule in $rules) {
@@ -278,14 +294,17 @@ foreach ($rule in $rules) {
     }
 }
 
-# Check if ports 1883 and 8080 are open and listening
-Write-Host "8) Checking if ports 1883 and 8080 are open and listening for connections..."
+# Check if ports 1883, 8080 and 7800 are open and listening
+Write-Host "8) Checking if ports 1883, 8080 and 7800 are open and listening for connections..."
 $ports = @(
     @{
         Port = 1883
     },
     @{
         Port = 8080
+    }
+    @{
+        Port = 7800
     }
 )
 function Test-Port {
@@ -400,3 +419,4 @@ try {
     
 }
 Write-Host "The HiveMQ Broker has been installed and operating correctly!" -BackgroundColor Yellow -ForegroundColor Black
+Stop-Transcript | Out-Null

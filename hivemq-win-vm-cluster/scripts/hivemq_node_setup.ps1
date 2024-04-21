@@ -14,6 +14,9 @@ $tempPath = $env:TEMP
 # Create a new WebClient object to download files from a specified URLs to a local file
 $webClient = New-Object System.Net.WebClient
 
+# Write configuration files which by default writes UTF-8 without a BOM
+$utf8NoBom = New-Object System.Text.UTF8Encoding $False
+
 # Define download links
 $links = @{
     OpenJDK_Link = "https://api.adoptium.net/v3/installer/version/jdk-11.0.22+7/windows/x64/jre/hotspot/normal/eclipse?project=jdk"
@@ -27,6 +30,7 @@ $links = @{
 $hostname = hostname
 $datetime = Get-Date -f 'yyyyMMddHHmmss'
 Start-Transcript -Path "C:\hivemq\azure-deploy\azure-deploy-${hostname}-${datetime}.log" | Out-Null
+Write-Host "Starting the HiveMQ Broker installation." -BackgroundColor Yellow -ForegroundColor Black
 
 # Test download links
 Write-Host "1) Testing download links availability..."
@@ -89,28 +93,33 @@ try {
 # Install HiveMQ
 Write-Host "3) Installing HiveMQ $hivemqVersion..."
 try {
-    $downloadPath = "C:\hivemq-$hivemqVersion.zip"
+    $downloadPath = "$tempPath\hivemq-$hivemqVersion.zip"
     $webClient.DownloadFile($links.HiveMQ_Link, $downloadPath)
     if (Test-Path $downloadPath) {
         Write-Host "HiveMQ $hivemqVersion download was successful!" -ForegroundColor Green
     } else {
         throw "HiveMQ $hivemqVersion download failed."
     }
-    $extractedFolder = "C:\"
+    $extractedFolder = "$tempPath\"
     Expand-Archive -Path $downloadPath -DestinationPath $extractedFolder -Force
     if (Test-Path $extractedFolder) {
         Write-Host "HiveMQ $hivemqVersion extraction was successful!" -ForegroundColor Green
     } else {
         throw "HiveMQ $hivemqVersion extraction failed."
     }
-    Rename-Item -Path "C:\hivemq-$hivemqVersion" -NewName "C:\hivemq"
+    Copy-Item -Path "$tempPath\hivemq-$hivemqVersion\*" -Destination "C:\hivemq" -Recurse -Force -ErrorAction Stop
     Write-Host "HiveMQ $hivemqVersion installation completed successfully!" -ForegroundColor Green
 } catch {
     Write-Host "Failed to install HiveMQ $hivemqVersion." -ForegroundColor Red
     throw
 } finally {
-    if (Test-Path $downloadPath ) {
-        Remove-Item -Path $downloadPath -Force
+    if ((Test-Path $downloadPath) -or (Test-Path "$tempPath\hivemq-$hivemqVersion")) {
+        if (Test-Path $downloadPath) {
+            Remove-Item -Path $downloadPath -Force
+        }
+        if (Test-Path "$tempPath\hivemq-$hivemqVersion") {
+            Remove-Item -Path "$tempPath\hivemq-$hivemqVersion" -Recurse -Force
+        }
     }
     $webClient.Dispose()
 }
@@ -160,7 +169,7 @@ $configContent = @"
 "@
 $configFilePath = "C:\hivemq\conf\config.xml"
 try {
-    $configContent | Out-File -FilePath $configFilePath -Encoding UTF8
+    [System.IO.File]::WriteAllText($configFilePath, $configContent, $utf8NoBom)
     Write-Host "HiveMQ configuration file has been created successfully!" -ForegroundColor Green
 } catch {
     Write-Host "Failed to create HiveMQ configuration file." -ForegroundColor Red
@@ -203,7 +212,7 @@ file-expiration=360
 update-interval=180
 "@
     $ExtensionPropertiesPath = "$extensionsDir\hivemq-azure-cluster-discovery-extension\azDiscovery.properties"
-    $extensionConfig | Out-File -FilePath $ExtensionPropertiesPath -Encoding UTF8
+    [System.IO.File]::WriteAllText($ExtensionPropertiesPath, $extensionConfig, $utf8NoBom)
     if (-Not (Test-Path $ExtensionPropertiesPath)) {
         throw "Failed to write HiveMQ Azure Cluster Discovery Extension 1.1.0 configuration file."
     }
@@ -236,15 +245,20 @@ try {
         throw "HiveMQ MQTT CLI $hivemqVersion extraction failed."
     }
     $destinationPath = "C:\hivemq\tools\mqtt-cli\win"
-    New-Item -Path $destinationPath -ItemType Directory -Force | Out-Null
-    Copy-Item -Path "$extractedFolder\*" -Destination $destinationPath -Recurse -Force
+    New-Item -Path $destinationPath -ItemType Directory -Force | Out-Null -ErrorAction Stop
+    Copy-Item -Path "$extractedFolder\*" -Destination $destinationPath -Recurse -Force -ErrorAction Stop
     Write-Host "HiveMQ MQTT CLI $hivemqVersion installation completed successfully!" -ForegroundColor Green
 } catch {
     Write-Host "Failed to install HiveMQ MQTT CLI $hivemqVersion." -ForegroundColor Red
     throw
 } finally {
-    if (Test-Path $downloadPath) {
-        Remove-Item -Path $downloadPath -Force
+    if ((Test-Path $downloadPath) -or (Test-Path "$tempPath\mqtt-cli-$hivemqVersion-win")) {
+        if (Test-Path $downloadPath) {
+            Remove-Item -Path $downloadPath -Force
+        }
+        if (Test-Path "$tempPath\mqtt-cli-$hivemqVersion-win") {
+            Remove-Item -Path "$tempPath\mqtt-cli-$hivemqVersion-win" -Recurse -Force
+        }
     }
     $webClient.Dispose()
 }
@@ -285,7 +299,7 @@ foreach ($rule in $rules) {
         if (Get-NetFirewallRule -DisplayName $rule.DisplayName -ErrorAction SilentlyContinue) {
             Write-Host "The rule '$($rule.DisplayName)' already exists." -ForegroundColor Cyan
         } else {
-            New-NetFirewallRule @rule | Out-Null
+            New-NetFirewallRule @rule | Out-Null -ErrorAction Stop
             Write-Host "The rule '$($rule.DisplayName)' has been created successfully!" -ForegroundColor Green
         }
     } catch {
@@ -374,8 +388,8 @@ try {
         throw "NSSM extraction failed."
     }
     $nssmPath = "C:\hivemq\windows-service\nssm.exe"
-    New-Item -Path "C:\hivemq\windows-service" -ItemType Directory | Out-Null
-    Copy-Item -Path "$tempPath\nssm-2.24\win64\nssm.exe" -Destination $nssmPath -Force
+    New-Item -Path "C:\hivemq\windows-service" -ItemType Directory | Out-Null -ErrorAction Stop
+    Copy-Item -Path "$tempPath\nssm-2.24\win64\nssm.exe" -Destination $nssmPath -Force -ErrorAction Stop
 
     $serviceCommands = @(
         @{Arguments = "install HiveMQService C:\hivemq\bin\run.bat"; Description = "Installing HiveMQ service..."},
@@ -390,7 +404,7 @@ try {
         @{Arguments = "set HiveMQService Start SERVICE_AUTO_START"; Description = "Setting service Startup Type..."}
     )
     foreach ($cmd in $serviceCommands) {
-        Start-Process -FilePath $nssmPath -ArgumentList $cmd.Arguments -Wait *> $null
+        Start-Process -FilePath $nssmPath -ArgumentList $cmd.Arguments -Wait -ErrorAction Stop *> $null
         Write-Host "$($cmd.Description)" -ForegroundColor Cyan
     }
     Write-Host "11) Starting HiveMQ service..."
@@ -416,7 +430,7 @@ try {
             Remove-Item -Path "$tempPath\nssm-2.24" -Recurse -Force
         }
     }
-    
+    $webClient.Dispose()
 }
 Write-Host "The HiveMQ Broker has been installed and operating correctly!" -BackgroundColor Yellow -ForegroundColor Black
 Stop-Transcript | Out-Null

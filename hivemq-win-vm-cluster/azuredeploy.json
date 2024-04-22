@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.26.170.59819",
-      "templateHash": "9618996344818320137"
+      "templateHash": "1001386832222279898"
     }
   },
   "parameters": {
@@ -509,7 +509,7 @@
               "loadDistribution": "SourceIPProtocol",
               "disableOutboundSnat": true,
               "probe": {
-                "id": "[resourceId('Microsoft.Network/loadBalancers/probes', variables('lbName'), 'healthProbeHivemq')]"
+                "id": "[resourceId('Microsoft.Network/loadBalancers/probes', variables('lbName'), 'healthProbeMQTT')]"
               }
             }
           },

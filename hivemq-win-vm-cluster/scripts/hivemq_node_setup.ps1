@@ -29,7 +29,7 @@ $links = @{
 # Log everything from the PowerShell script session to a file
 $hostname = hostname
 $datetime = Get-Date -f 'yyyyMMddHHmmss'
-Start-Transcript -Path "C:\hivemq\azure-deploy\azure-deploy-${hostname}-${datetime}.log" | Out-Null
+Start-Transcript -Path "C:\hivemq\deploy\azure-deploy-${hostname}-${datetime}.log" | Out-Null
 Write-Host "Starting the HiveMQ Broker installation." -BackgroundColor Yellow -ForegroundColor Black
 
 # Test download links
@@ -268,30 +268,30 @@ Write-Host "7) Opening required ports in Windows Defender Firewall..."
 $rules = @(
     @{
         DisplayName = "HiveMQ MQTT Port 1883"
-        Description = "This rule allows inbound TCP connections on port 1883 for HiveMQ Broker. Port 1883 is used for non-TLS MQTT communication. The rule is applicable across Public profile to support both internal and external MQTT client connections."
+        Description = "This rule allows inbound TCP connections on port 1883 for HiveMQ Broker. Port 1883 is used for non-TLS MQTT communication. The rule is applicable across Public and Private profiles to support both internal and external MQTT client connections."
         Direction = "Inbound"
         Protocol = "TCP"
         LocalPort = 1883
         Action = "Allow"
-        Profile = "Public"
+        Profile = "Public, Private"
     },
     @{
         DisplayName = "HiveMQ Control Center Port 8080"
-        Description = "This rule allows inbound TCP connections on port 8080 for HiveMQ Control Center. Port 8080 is used for plain HTTP communication. The rule is applicable across Public profile to support both internal and external HTTP connections."
+        Description = "This rule allows inbound TCP connections on port 8080 for HiveMQ Control Center. Port 8080 is used for plain HTTP communication. The rule is applicable across Public and Private profiles to support both internal and external HTTP connections."
         Direction = "Inbound"
         Protocol = "TCP"
         LocalPort = 8080
         Action = "Allow"
-        Profile = "Public"
+        Profile = "Public, Private"
     }
     @{
         DisplayName = "HiveMQ Cluster Transport Port 7800"
-        Description = "This rule allows inbound TCP connections on port 7800 for the HiveMQ Cluster Transport. Port 7800 is used for inter-node communication within a HiveMQ cluster. The rule is applicable across Public profile for ensuring uninterrupted cluster operations."
+        Description = "This rule allows inbound TCP connections on port 7800 for the HiveMQ Cluster Transport. Port 7800 is used for inter-node communication within a HiveMQ cluster. The rule is applicable across Public and Private profiles for ensuring uninterrupted cluster operations."
         Direction = "Inbound"
         Protocol = "TCP"
         LocalPort = 7800
         Action = "Allow"
-        Profile = "Public"
+        Profile = "Public, Private"
     }
 )
 foreach ($rule in $rules) {

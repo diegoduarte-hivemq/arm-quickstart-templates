@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.26.170.59819",
-      "templateHash": "1001386832222279898"
+      "templateHash": "16196138788400350745"
     }
   },
   "parameters": {
@@ -74,23 +74,27 @@
       }
     },
     "enableAcceleratedNetworking": {
-      "type": "bool",
-      "defaultValue": false,
+      "type": "string",
+      "defaultValue": "Yes",
+      "allowedValues": [
+        "Yes",
+        "No"
+      ],
       "metadata": {
         "description": "Accelerated Networking on VMs significantly enhances HiveMQ intracluster communication when the VMs are within the same vNet"
       }
     },
     "OperatingSystem": {
       "type": "string",
-      "defaultValue": "Windows Server 2022 Azure Edition",
+      "defaultValue": "Windows Server 2022 Datacenter Azure Edition",
       "allowedValues": [
         "Windows Server 2016 Datacenter",
         "Windows Server 2016 Datacenter Core",
         "Windows Server 2019 Datacenter",
         "Windows Server 2019 Datacenter Core",
         "Windows Server 2022 Datacenter",
-        "Windows Server 2022 Azure Edition",
-        "Windows Server 2022 Azure Edition Core"
+        "Windows Server 2022 Datacenter Azure Edition",
+        "Windows Server 2022 Datacenter Azure Edition Core"
       ],
       "metadata": {
         "description": "The Windows version for the VM. This will pick a fully patched image of this given Windows version."
@@ -98,10 +102,10 @@
     },
     "securityType": {
       "type": "string",
-      "defaultValue": "Standard",
+      "defaultValue": "Standard (Basic Level)",
       "allowedValues": [
-        "Standard",
-        "TrustedLaunch"
+        "Standard (Basic Level)",
+        "Trusted launch virtual machines"
       ],
       "metadata": {
         "description": "Security Type of the Virtual Machine."
@@ -126,22 +130,32 @@
       "6 nodes": 6
     },
     "numberOfHivemqNodes": "[variables('nodeCountMap')[parameters('HivemqClusterSize')]]",
+    "AcceleratedNetworkingMap": {
+      "Yes": true,
+      "No": false
+    },
+    "AcceleratedNetworkingSelection": "[variables('AcceleratedNetworkingMap')[parameters('enableAcceleratedNetworking')]]",
     "osVersionMap": {
       "Windows Server 2016 Datacenter": "2016-Datacenter",
       "Windows Server 2016 Datacenter Core": "2016-Datacenter-Server-Core",
       "Windows Server 2019 Datacenter": "2019-Datacenter",
       "Windows Server 2019 Datacenter Core": "2019-Datacenter-Server-Core",
       "Windows Server 2022 Datacenter": "2022-Datacenter",
-      "Windows Server 2022 Azure Edition": "2022-Datacenter-Azure-Edition",
-      "Windows Server 2022 Azure Edition Core": "2022-Datacenter-Azure-Edition-Core"
+      "Windows Server 2022 Datacenter Azure Edition": "2022-Datacenter-Azure-Edition",
+      "Windows Server 2022 Datacenter Azure Edition Core": "2022-Datacenter-Azure-Edition-Core"
     },
     "osVersion": "[variables('osVersionMap')[parameters('OperatingSystem')]]",
+    "securityTypeMap": {
+      "Standard (Basic Level)": "Standard",
+      "Trusted launch virtual machines": "TrustedLaunch"
+    },
+    "securityTypeSelection": "[variables('securityTypeMap')[parameters('securityType')]]",
     "securityProfileJson": {
       "uefiSettings": {
         "secureBootEnabled": true,
         "vTpmEnabled": true
       },
-      "securityType": "[parameters('securityType')]"
+      "securityType": "[variables('securityTypeSelection')]"
     },
     "storageAccountName": "[format('{0}blob{1}', toLower(parameters('projectName')), uniqueString(resourceGroup().id))]",
     "storageBlobContainerName": "hivemq-cluster-container",
@@ -230,7 +244,7 @@
         "networkSecurityGroup": {
           "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
         },
-        "enableAcceleratedNetworking": "[parameters('enableAcceleratedNetworking')]"
+        "enableAcceleratedNetworking": "[variables('AcceleratedNetworkingSelection')]"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Network/loadBalancers', variables('lbName'))]",
@@ -323,7 +337,7 @@
             "provisionVMAgent": true
           }
         },
-        "securityProfile": "[if(equals(parameters('securityType'), 'TrustedLaunch'), variables('securityProfileJson'), null())]"
+        "securityProfile": "[if(equals(variables('securityTypeSelection'), 'TrustedLaunch'), variables('securityProfileJson'), null())]"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Compute/availabilitySets', format('{0}-as', parameters('projectName')))]",
@@ -528,7 +542,7 @@
               "idleTimeoutInMinutes": 5,
               "protocol": "Tcp",
               "enableTcpReset": false,
-              "loadDistribution": "Default",
+              "loadDistribution": "SourceIPProtocol",
               "disableOutboundSnat": true,
               "probe": {
                 "id": "[resourceId('Microsoft.Network/loadBalancers/probes', variables('lbName'), 'healthProbeControlCenter')]"

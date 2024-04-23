@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.26.170.59819",
-      "templateHash": "16196138788400350745"
+      "templateHash": "6256299781613380067"
     }
   },
   "parameters": {
@@ -67,7 +67,9 @@
         "3 nodes",
         "4 nodes",
         "5 nodes",
-        "6 nodes"
+        "6 nodes",
+        "7 nodes",
+        "8 nodes"
       ],
       "metadata": {
         "description": "Select the number of HiveMQ Cluster nodes to deploy."
@@ -127,7 +129,9 @@
       "3 nodes": 3,
       "4 nodes": 4,
       "5 nodes": 5,
-      "6 nodes": 6
+      "6 nodes": 6,
+      "7 nodes": 7,
+      "8 nodes": 8
     },
     "numberOfHivemqNodes": "[variables('nodeCountMap')[parameters('HivemqClusterSize')]]",
     "AcceleratedNetworkingMap": {

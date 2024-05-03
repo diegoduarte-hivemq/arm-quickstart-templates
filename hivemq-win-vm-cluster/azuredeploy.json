@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.26.170.59819",
-      "templateHash": "6256299781613380067"
+      "templateHash": "3048114815920686297"
     }
   },
   "parameters": {
@@ -20,9 +20,10 @@
     },
     "hivemqVersion": {
       "type": "string",
-      "defaultValue": "4.27.0",
+      "defaultValue": "4.28.0",
+      "minLength": 5,
       "metadata": {
-        "description": "Specifies HiveMQ version you want to install. (eg. 4.9.18 or 4.27.0)"
+        "description": "Specifies HiveMQ version you want to install. (eg. 4.9.19 or 4.28.0)"
       }
     },
     "location": {
@@ -112,6 +113,18 @@
       "metadata": {
         "description": "Security Type of the Virtual Machine."
       }
+    },
+    "DeployAzureBastion": {
+      "type": "string",
+      "defaultValue": "Yes - Basic SKU (Browser access)",
+      "allowedValues": [
+        "No",
+        "Yes - Basic SKU (Browser access)",
+        "Yes - Standard SKU (RDP Native Client access)"
+      ],
+      "metadata": {
+        "description": "Select whether to deploy Azure Bastion and specify the SKU if deployment is desired. Azure Bastion allows you access to Windows Server VMs without any exposure through public IP addresses"
+      }
     }
   },
   "variables": {
@@ -161,6 +174,12 @@
       },
       "securityType": "[variables('securityTypeSelection')]"
     },
+    "DeployAzureBastionMap": {
+      "No": "No",
+      "Yes - Basic SKU (Browser access)": "Basic",
+      "Yes - Standard SKU (RDP Native Client access)": "Standard"
+    },
+    "DeployAzureBastionSelection": "[variables('DeployAzureBastionMap')[parameters('DeployAzureBastion')]]",
     "storageAccountName": "[format('{0}blob{1}', toLower(parameters('projectName')), uniqueString(resourceGroup().id))]",
     "storageBlobContainerName": "hivemq-cluster-container",
     "lbName": "[format('{0}-lb', parameters('projectName'))]",
@@ -168,6 +187,7 @@
     "lbFrontEndName": "LoadBalancerFrontEnd",
     "lbBackendPoolName": "LoadBalancerBackEndPool",
     "nsgName": "[format('{0}-nsg', parameters('projectName'))]",
+    "bastionNsgName": "[format('{0}-bastionNsg', parameters('projectName'))]",
     "vNetName": "[format('{0}-vnet', parameters('projectName'))]",
     "vNetAddressPrefix": "10.1.0.0/16",
     "vNetSubnetName": "HiveMQSubnet",
@@ -205,7 +225,6 @@
       "type": "Microsoft.Storage/storageAccounts/blobServices",
       "apiVersion": "2023-01-01",
       "name": "[format('{0}/{1}', variables('storageAccountName'), 'default')]",
-      "properties": {},
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
       ]
@@ -214,7 +233,6 @@
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-01-01",
       "name": "[format('{0}/{1}/{2}', variables('storageAccountName'), 'default', variables('storageBlobContainerName'))]",
-      "properties": {},
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageAccountName'), 'default')]"
       ]
@@ -265,35 +283,9 @@
         "name": "Aligned"
       },
       "properties": {
-        "platformFaultDomainCount": 2,
+        "platformFaultDomainCount": 3,
         "platformUpdateDomainCount": 1
       }
-    },
-    {
-      "copy": {
-        "name": "hivemq_node_setup",
-        "count": "[length(range(0, variables('numberOfHivemqNodes')))]"
-      },
-      "type": "Microsoft.Compute/virtualMachines/extensions",
-      "apiVersion": "2023-09-01",
-      "name": "[format('{0}-node{1}/InstallHiveMQ', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()])]",
-      "location": "[parameters('location')]",
-      "properties": {
-        "publisher": "Microsoft.Compute",
-        "type": "CustomScriptExtension",
-        "typeHandlerVersion": "1.10",
-        "autoUpgradeMinorVersion": true,
-        "protectedSettings": {
-          "fileUris": [
-            "[variables('setupScriptLink')]"
-          ],
-          "commandToExecute": "[format('powershell.exe -ExecutionPolicy Bypass -File hivemq_node_setup.ps1 \"{0}\" \"{1}\" \"{2}\" -Scope Process -Force', parameters('hivemqVersion'), format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix=core.windows.net', variables('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-01-01').keys[0].value), variables('storageBlobContainerName'))]"
-        }
-      },
-      "dependsOn": [
-        "hivemq_node",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
-      ]
     },
     {
       "copy": {
@@ -345,8 +337,34 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Compute/availabilitySets', format('{0}-as', parameters('projectName')))]",
-        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageAccountName'), 'default', variables('storageBlobContainerName'))]",
         "hivemq_node_networkInterface"
+      ]
+    },
+    {
+      "copy": {
+        "name": "hivemq_node_setup",
+        "count": "[length(range(0, variables('numberOfHivemqNodes')))]"
+      },
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "apiVersion": "2023-09-01",
+      "name": "[format('{0}-node{1}/InstallHiveMQ', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()])]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "publisher": "Microsoft.Compute",
+        "type": "CustomScriptExtension",
+        "typeHandlerVersion": "1.10",
+        "autoUpgradeMinorVersion": true,
+        "protectedSettings": {
+          "fileUris": [
+            "[variables('setupScriptLink')]"
+          ],
+          "commandToExecute": "[format('powershell.exe -ExecutionPolicy Bypass -File hivemq_node_setup.ps1 \"{0}\" \"{1}\" \"{2}\" -Scope Process -Force', parameters('hivemqVersion'), format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix=core.windows.net', variables('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-01-01').keys[0].value), variables('storageBlobContainerName'))]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageAccountName'), 'default', variables('storageBlobContainerName'))]",
+        "hivemq_node",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
       ]
     },
     {
@@ -419,6 +437,7 @@
       }
     },
     {
+      "condition": "[not(equals(variables('DeployAzureBastionSelection'), 'No'))]",
       "type": "Microsoft.Network/virtualNetworks/subnets",
       "apiVersion": "2023-04-01",
       "name": "[format('{0}/{1}', variables('vNetName'), variables('bastionSubnetName'))]",
@@ -446,10 +465,14 @@
       ]
     },
     {
+      "condition": "[not(equals(variables('DeployAzureBastionSelection'), 'No'))]",
       "type": "Microsoft.Network/bastionHosts",
       "apiVersion": "2023-04-01",
       "name": "[variables('bastionName')]",
       "location": "[parameters('location')]",
+      "sku": {
+        "name": "[variables('DeployAzureBastionSelection')]"
+      },
       "properties": {
         "ipConfigurations": [
           {
@@ -468,10 +491,12 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Network/publicIPAddresses', variables('bastionPublicIPAddressName'))]",
-        "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vNetName'), variables('bastionSubnetName'))]"
+        "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vNetName'), variables('bastionSubnetName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vNetName'))]"
       ]
     },
     {
+      "condition": "[not(equals(variables('DeployAzureBastionSelection'), 'No'))]",
       "type": "Microsoft.Network/publicIPAddresses",
       "apiVersion": "2021-08-01",
       "name": "[variables('bastionPublicIPAddressName')]",
@@ -482,6 +507,159 @@
       "properties": {
         "publicIPAddressVersion": "IPv4",
         "publicIPAllocationMethod": "Static"
+      }
+    },
+    {
+      "condition": "[equals(variables('DeployAzureBastionSelection'), 'Standard')]",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2023-04-01",
+      "name": "[variables('bastionNsgName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "AllowHttpsInBound",
+            "properties": {
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "sourceAddressPrefix": "Internet",
+              "destinationPortRange": "443",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 100,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "AllowGatewayManagerInBound",
+            "properties": {
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "sourceAddressPrefix": "GatewayManager",
+              "destinationPortRange": "443",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 110,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "AllowLoadBalancerInBound",
+            "properties": {
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "sourceAddressPrefix": "AzureLoadBalancer",
+              "destinationPortRange": "443",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 120,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "AllowBastionHostCommunicationInBound",
+            "properties": {
+              "protocol": "*",
+              "sourcePortRange": "*",
+              "sourceAddressPrefix": "VirtualNetwork",
+              "destinationPortRanges": [
+                "8080",
+                "5701"
+              ],
+              "destinationAddressPrefix": "VirtualNetwork",
+              "access": "Allow",
+              "priority": 130,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "DenyAllInBound",
+            "properties": {
+              "protocol": "*",
+              "sourcePortRange": "*",
+              "sourceAddressPrefix": "*",
+              "destinationPortRange": "*",
+              "destinationAddressPrefix": "*",
+              "access": "Deny",
+              "priority": 1000,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "AllowSshRdpOutBound",
+            "properties": {
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "sourceAddressPrefix": "*",
+              "destinationPortRanges": [
+                "22",
+                "3389"
+              ],
+              "destinationAddressPrefix": "VirtualNetwork",
+              "access": "Allow",
+              "priority": 100,
+              "direction": "Outbound"
+            }
+          },
+          {
+            "name": "AllowAzureCloudCommunicationOutBound",
+            "properties": {
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "sourceAddressPrefix": "*",
+              "destinationPortRange": "443",
+              "destinationAddressPrefix": "AzureCloud",
+              "access": "Allow",
+              "priority": 110,
+              "direction": "Outbound"
+            }
+          },
+          {
+            "name": "AllowBastionHostCommunicationOutBound",
+            "properties": {
+              "protocol": "*",
+              "sourcePortRange": "*",
+              "sourceAddressPrefix": "VirtualNetwork",
+              "destinationPortRanges": [
+                "8080",
+                "5701"
+              ],
+              "destinationAddressPrefix": "VirtualNetwork",
+              "access": "Allow",
+              "priority": 120,
+              "direction": "Outbound"
+            }
+          },
+          {
+            "name": "AllowGetSessionInformationOutBound",
+            "properties": {
+              "protocol": "*",
+              "sourcePortRange": "*",
+              "sourceAddressPrefix": "*",
+              "destinationAddressPrefix": "Internet",
+              "destinationPortRanges": [
+                "80",
+                "443"
+              ],
+              "access": "Allow",
+              "priority": 130,
+              "direction": "Outbound"
+            }
+          },
+          {
+            "name": "DenyAllOutBound",
+            "properties": {
+              "protocol": "*",
+              "sourcePortRange": "*",
+              "destinationPortRange": "*",
+              "sourceAddressPrefix": "*",
+              "destinationAddressPrefix": "*",
+              "access": "Deny",
+              "priority": 1000,
+              "direction": "Outbound"
+            }
+          }
+        ]
       }
     },
     {

@@ -17,11 +17,18 @@ $webClient = New-Object System.Net.WebClient
 # Write configuration files which by default writes UTF-8 without a BOM
 $utf8NoBom = New-Object System.Text.UTF8Encoding $False
 
+# Set the Java version to be downloaded and installed
+if ($hivemqVersion -ge "4.28.0") {
+    $jdkVersion = "21.0.3+9"
+} else {
+    $jdkVersion = "11.0.23+9"
+}
+
 # Define download links
 $links = @{
-    OpenJDK_Link = "https://api.adoptium.net/v3/installer/version/jdk-11.0.22+7/windows/x64/jre/hotspot/normal/eclipse?project=jdk"
+    OpenJDK_Link = "https://api.adoptium.net/v3/installer/version/jdk-$jdkVersion/windows/x64/jre/hotspot/normal/eclipse?project=jdk"
     HiveMQ_Link = "https://releases.hivemq.com/hivemq-$hivemqVersion.zip"
-    AzureExtension_Link = "https://github.com/hivemq/hivemq-azure-cluster-discovery-extension/releases/download/1.1.0/hivemq-azure-cluster-discovery-extension-1.1.0.zip"
+    AzureExtension_Link = "https://github.com/hivemq/hivemq-azure-cluster-discovery-extension/releases/download/1.2.0/hivemq-azure-cluster-discovery-extension-1.2.0.zip"
     NSSM_Link = "https://nssm.cc/release/nssm-2.24.zip"
     MQTTCLI_Link = "https://github.com/hivemq/mqtt-cli/releases/download/v$hivemqVersion/mqtt-cli-$hivemqVersion-win.zip"
 }
@@ -59,29 +66,30 @@ foreach ($link in $links.GetEnumerator()) {
 }
 Write-Host "Testing of all download links was successful!" -ForegroundColor Green
 
-# Install Eclipse Temurin OpenJDK JRE 11
-Write-Host "2) Installing Eclipse Temurin OpenJDK JRE 11..."
+# Install Eclipse Temurin OpenJDK JRE
+Write-Host "2) Installing Eclipse Temurin OpenJDK JRE $jdkVersion..."
 try {
-    $downloadPath = "$tempPath\OpenJDK11U-jre_x64_windows_hotspot_11.0.22_7.msi"
+    $downloadPath = "$tempPath\OpenJDK-jre_x64_windows_hotspot_$jdkVersion.msi" -replace '\+', '_'
     $webClient.DownloadFile($links.OpenJDK_Link, $downloadPath)
     if (-Not (Test-Path $downloadPath)) {
-        throw "Eclipse Temurin OpenJDK JRE 11 download failed."
+        throw "Eclipse Temurin OpenJDK JRE $jdkVersion download failed."
     }
-    Write-Host "Eclipse Temurin OpenJDK JRE 11 download was successful!" -ForegroundColor Green
+    Write-Host "Eclipse Temurin OpenJDK JRE $jdkVersion download was successful!" -ForegroundColor Green
+    $installDir = "C:\\Program Files\\Eclipse Adoptium\\jre-$jdkVersion-hotspot\\" -replace '\+', '.'
     $arguments = @(
         "/i",
         "`"$downloadPath`"",
         "ADDLOCAL=FeatureMain,FeatureEnvironment,FeatureJarFileRunWith,FeatureJavaHome",
-        "INSTALLDIR=`"C:\\Program Files\\Eclipse Adoptium\\jdk-11.0.22.7-hotspot\\`"",
+        "INSTALLDIR=`"$installDir`"",
         "/quiet"
     )
     $OpenJDKinstallProcess = Start-Process -FilePath "msiexec" -ArgumentList $arguments -Wait -Verb RunAs -PassThru
     if ($OpenJDKinstallProcess.ExitCode -ne 0) {
         throw "Installation failed with exit code: $($OpenJDKinstallProcess.ExitCode)"
     }
-    Write-Host "Eclipse Temurin OpenJDK JRE 11 installation completed successfully!" -ForegroundColor Green
+    Write-Host "Eclipse Temurin OpenJDK JRE $jdkVersion installation completed successfully!" -ForegroundColor Green
 } catch {
-    Write-Host "Eclipse Temurin OpenJDK JRE 11 installation failed." -ForegroundColor Red
+    Write-Host "Eclipse Temurin OpenJDK JRE $jdkVersion installation failed." -ForegroundColor Red
     throw
 } finally {
     if (Test-Path $downloadPath ) {
@@ -124,8 +132,8 @@ try {
     $webClient.Dispose()
 }
 
-# Create HiveMQ configuration file
-Write-Host "4) Creating HiveMQ configuration file..."
+# Create HiveMQ basic configuration file
+Write-Host "4) Creating HiveMQ basic configuration file..."
 $configContent = @"
 <?xml version="1.0" encoding="UTF-8" ?>
 <hivemq xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -177,22 +185,22 @@ try {
 }
 
 # Install HiveMQ Azure Cluster Discovery Extension
-Write-Host "5) Installing HiveMQ Azure Cluster Discovery Extension 1.1.0..."
+Write-Host "5) Installing HiveMQ Azure Cluster Discovery Extension 1.2.0..."
 try {
     $extensionsDir = "C:\hivemq\extensions"
     $downloadPath = "$extensionsDir\azure-extension.zip"
     $webClient.DownloadFile($links.AzureExtension_Link, $downloadPath)
     if (Test-Path $downloadPath) {
-        Write-Host "HiveMQ Azure Cluster Discovery Extension 1.1.0 download was successful!" -ForegroundColor Green
+        Write-Host "HiveMQ Azure Cluster Discovery Extension 1.2.0 download was successful!" -ForegroundColor Green
     } else {
-        throw "HiveMQ Azure Cluster Discovery Extension 1.1.0 download failed."
+        throw "HiveMQ Azure Cluster Discovery Extension 1.2.0 download failed."
     }
     $extractedFolder = "$extensionsDir\hivemq-azure-cluster-discovery-extension"
     Expand-Archive -Path $downloadPath -DestinationPath $extensionsDir -Force
     if (Test-Path $extractedFolder) {
-        Write-Host "HiveMQ Azure Cluster Discovery Extension 1.1.0 extraction was successful!" -ForegroundColor Green
+        Write-Host "HiveMQ Azure Cluster Discovery Extension 1.2.0 extraction was successful!" -ForegroundColor Green
     } else {
-        throw "HiveMQ Azure Cluster Discovery Extension 1.1.0 extraction failed."
+        throw "HiveMQ Azure Cluster Discovery Extension 1.2.0 extraction failed."
     }
     $extensionConfig = @"
 # HiveMQ Azure Cluster Discovery based on Azure Blob Storage
@@ -214,11 +222,11 @@ update-interval=180
     $ExtensionPropertiesPath = "$extensionsDir\hivemq-azure-cluster-discovery-extension\azDiscovery.properties"
     [System.IO.File]::WriteAllText($ExtensionPropertiesPath, $extensionConfig, $utf8NoBom)
     if (-Not (Test-Path $ExtensionPropertiesPath)) {
-        throw "Failed to write HiveMQ Azure Cluster Discovery Extension 1.1.0 configuration file."
+        throw "Failed to write HiveMQ Azure Cluster Discovery Extension 1.2.0 configuration file."
     }
-    Write-Host "HiveMQ Azure Cluster Discovery Extension 1.1.0 installation completed successfully!" -ForegroundColor Green
+    Write-Host "HiveMQ Azure Cluster Discovery Extension 1.2.0 installation completed successfully!" -ForegroundColor Green
 } catch {
-    Write-Host "Failed to install HiveMQ Azure Cluster Discovery Extension 1.1.0." -ForegroundColor Red
+    Write-Host "Failed to install HiveMQ Azure Cluster Discovery Extension 1.2.0." -ForegroundColor Red
     throw
 } finally {
     if (Test-Path $downloadPath) {
@@ -349,8 +357,14 @@ Write-Host "9) Configuring JVM Heap Size with 50% of the RAM available on the sy
 $filePath = "C:\hivemq\bin\run.bat"
 try {
     $fileContent = Get-Content $filePath -ErrorAction Stop
-    $searchLine = 'set "JAVA_OPTS=-Djava.net.preferIPv4Stack=true -noverify %JAVA_OPTS%"'
-    $addLine = '  set "JAVA_OPTS=%JAVA_OPTS% -XX:+UnlockExperimentalVMOptions -XX:InitialRAMPercentage=40 -XX:MaxRAMPercentage=50 -XX:MinRAMPercentage=30"'
+    # Check if the HiveMQ version is greater than or equal to 4.28.0 due to changes in HiveMQ Start Script for Windows
+    if ($hivemqVersion -ge "4.28.0") {
+        $searchLine = 'set "JAVA_OPTS=%JAVA_OPTS% -Djava.net.preferIPv4Stack=true"'
+        $addLine = 'set "JAVA_OPTS=%JAVA_OPTS% -XX:+UnlockExperimentalVMOptions -XX:InitialRAMPercentage=40 -XX:MaxRAMPercentage=50 -XX:MinRAMPercentage=30"'
+    } else {
+        $searchLine = 'set "JAVA_OPTS=-Djava.net.preferIPv4Stack=true -noverify %JAVA_OPTS%"'
+        $addLine = '  set "JAVA_OPTS=%JAVA_OPTS% -XX:+UnlockExperimentalVMOptions -XX:InitialRAMPercentage=40 -XX:MaxRAMPercentage=50 -XX:MinRAMPercentage=30"'
+    }
     $lineIndex = $null
     for ($i = 0; $i -lt $fileContent.Count; $i++) {
         if ($fileContent[$i] -match $searchLine) {

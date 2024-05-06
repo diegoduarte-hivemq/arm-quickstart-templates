@@ -241,7 +241,7 @@ foreach ($rule in $rules) {
 }
 
 # Check if ports 1883 and 8080 are open and listening
-Write-Host "7) Checking if ports 1883, 8080 and 7800 are open and listening for connections..."
+Write-Host "7) Checking if ports 1883 and 8080 are open and listening for connections..."
 $ports = @(
     @{
         Port = 1883

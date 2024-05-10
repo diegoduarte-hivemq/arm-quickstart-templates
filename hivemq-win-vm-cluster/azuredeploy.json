@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.26.170.59819",
-      "templateHash": "3048114815920686297"
+      "templateHash": "14619094840665822476"
     }
   },
   "parameters": {
@@ -49,6 +49,7 @@
       "type": "string",
       "defaultValue": "Standard_F4s_v2 - 4 vcpus, 8 GiB memory",
       "allowedValues": [
+        "Standard_B2s - 2 vcpus, 4 GiB memory (Staging/Non-Production)",
         "Standard_F4s_v2 - 4 vcpus, 8 GiB memory",
         "Standard_F8s_v2 - 8 vcpus, 16 GiB memory ",
         "Standard_F16s_v2 - 16 vcpus, 32 GiB memory",
@@ -62,29 +63,30 @@
     },
     "HivemqClusterSize": {
       "type": "string",
-      "defaultValue": "2 nodes",
+      "defaultValue": "2 nodes (Clustering Enabled)",
       "allowedValues": [
-        "2 nodes",
-        "3 nodes",
-        "4 nodes",
-        "5 nodes",
-        "6 nodes",
-        "7 nodes",
-        "8 nodes"
+        "1 server (Standalone - Clustering Disabled)",
+        "2 nodes (Clustering Enabled)",
+        "3 nodes (Clustering Enabled)",
+        "4 nodes (Clustering Enabled)",
+        "5 nodes (Clustering Enabled)",
+        "6 nodes (Clustering Enabled)",
+        "7 nodes (Clustering Enabled)",
+        "8 nodes (Clustering Enabled)"
       ],
       "metadata": {
-        "description": "Select the number of HiveMQ Cluster nodes to deploy."
+        "description": "Select the deployment configuration for HiveMQ. Keep in mind that costs increases proportionally with the number of nodes. Choose based on your performance needs and budget considerations."
       }
     },
     "enableAcceleratedNetworking": {
       "type": "string",
-      "defaultValue": "Yes",
+      "defaultValue": "No",
       "allowedValues": [
         "Yes",
         "No"
       ],
       "metadata": {
-        "description": "Accelerated Networking on VMs significantly enhances HiveMQ intracluster communication when the VMs are within the same vNet"
+        "description": "Accelerated Networking on VMs significantly enhances HiveMQ intracluster communication when the VMs are within the same vNet."
       }
     },
     "OperatingSystem": {
@@ -123,12 +125,13 @@
         "Yes - Standard SKU (RDP Native Client access)"
       ],
       "metadata": {
-        "description": "Select whether to deploy Azure Bastion and specify the SKU if deployment is desired. Azure Bastion allows you access to Windows Server VMs without any exposure through public IP addresses"
+        "description": "Select whether to deploy Azure Bastion and specify the SKU if deployment is desired. Azure Bastion allows you access to Windows Server VMs without any exposure through public IP addresses."
       }
     }
   },
   "variables": {
     "vmSizeMap": {
+      "Standard_B2s - 2 vcpus, 4 GiB memory (Staging/Non-Production)": "Standard_B2s",
       "Standard_F4s_v2 - 4 vcpus, 8 GiB memory": "Standard_F4s_v2",
       "Standard_F8s_v2 - 8 vcpus, 16 GiB memory": "Standard_F8s_v2",
       "Standard_F16s_v2 - 16 vcpus, 32 GiB memory": "Standard_F16s_v2",
@@ -138,15 +141,17 @@
     },
     "virtualMachineSizeSpecs": "[variables('vmSizeMap')[parameters('vmSize')]]",
     "nodeCountMap": {
-      "2 nodes": 2,
-      "3 nodes": 3,
-      "4 nodes": 4,
-      "5 nodes": 5,
-      "6 nodes": 6,
-      "7 nodes": 7,
-      "8 nodes": 8
+      "1 server (Standalone - Clustering Disabled)": 1,
+      "2 nodes (Clustering Enabled)": 2,
+      "3 nodes (Clustering Enabled)": 3,
+      "4 nodes (Clustering Enabled)": 4,
+      "5 nodes (Clustering Enabled)": 5,
+      "6 nodes (Clustering Enabled)": 6,
+      "7 nodes (Clustering Enabled)": 7,
+      "8 nodes (Clustering Enabled)": 8
     },
     "numberOfHivemqNodes": "[variables('nodeCountMap')[parameters('HivemqClusterSize')]]",
+    "deployClusterResources": "[not(equals(parameters('HivemqClusterSize'), '1 server (Standalone - Clustering Disabled)'))]",
     "AcceleratedNetworkingMap": {
       "Yes": true,
       "No": false
@@ -173,6 +178,9 @@
         "vTpmEnabled": true
       },
       "securityType": "[variables('securityTypeSelection')]"
+    },
+    "availabilitySetJson": {
+      "id": "[resourceId('Microsoft.Compute/availabilitySets', format('{0}-as', parameters('projectName')))]"
     },
     "DeployAzureBastionMap": {
       "No": "No",
@@ -205,10 +213,11 @@
     "ascReportingEndpoint": "[substring('emptystring', 0, 0)]",
     "natGatewayName": "[format('{0}-natgateway', parameters('projectName'))]",
     "natGatewayPublicIPAddressName": "[format('{0}-natPublicIP', parameters('projectName'))]",
-    "setupScriptLink": "https://raw.githubusercontent.com/diegoduarte-hivemq/arm-quickstart-templates/main/hivemq-win-vm-cluster/scripts/hivemq_node_setup.ps1"
+    "setupScriptLink": "[if(variables('deployClusterResources'), 'https://raw.githubusercontent.com/diegoduarte-hivemq/arm-quickstart-templates/main/hivemq-win-vm-cluster/scripts/hivemq_node_setup.ps1', 'https://raw.githubusercontent.com/diegoduarte-hivemq/arm-quickstart-templates/main/hivemq-win-vm-cluster/scripts/hivemq_standalone_setup.ps1')]"
   },
   "resources": [
     {
+      "condition": "[variables('deployClusterResources')]",
       "type": "Microsoft.Storage/storageAccounts",
       "apiVersion": "2023-01-01",
       "name": "[variables('storageAccountName')]",
@@ -222,6 +231,7 @@
       }
     },
     {
+      "condition": "[variables('deployClusterResources')]",
       "type": "Microsoft.Storage/storageAccounts/blobServices",
       "apiVersion": "2023-01-01",
       "name": "[format('{0}/{1}', variables('storageAccountName'), 'default')]",
@@ -230,6 +240,7 @@
       ]
     },
     {
+      "condition": "[variables('deployClusterResources')]",
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-01-01",
       "name": "[format('{0}/{1}/{2}', variables('storageAccountName'), 'default', variables('storageBlobContainerName'))]",
@@ -239,12 +250,12 @@
     },
     {
       "copy": {
-        "name": "hivemq_node_networkInterface",
+        "name": "hivemq_vm_networkInterface",
         "count": "[length(range(0, variables('numberOfHivemqNodes')))]"
       },
       "type": "Microsoft.Network/networkInterfaces",
       "apiVersion": "2023-04-01",
-      "name": "[format('{0}-node{1}-nic', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()])]",
+      "name": "[if(variables('deployClusterResources'), format('{0}-node{1}-nic', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()]), format('{0}-srv-nic', parameters('projectName')))]",
       "location": "[parameters('location')]",
       "properties": {
         "ipConfigurations": [
@@ -275,6 +286,7 @@
       ]
     },
     {
+      "condition": "[variables('deployClusterResources')]",
       "type": "Microsoft.Compute/availabilitySets",
       "apiVersion": "2023-09-01",
       "name": "[format('{0}-as', parameters('projectName'))]",
@@ -289,17 +301,15 @@
     },
     {
       "copy": {
-        "name": "hivemq_node",
+        "name": "hivemq_vm",
         "count": "[length(range(0, variables('numberOfHivemqNodes')))]"
       },
       "type": "Microsoft.Compute/virtualMachines",
       "apiVersion": "2023-09-01",
-      "name": "[format('{0}-node{1}', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()])]",
+      "name": "[if(variables('deployClusterResources'), format('{0}-node{1}', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()]), format('{0}-srv', parameters('projectName')))]",
       "location": "[parameters('location')]",
       "properties": {
-        "availabilitySet": {
-          "id": "[resourceId('Microsoft.Compute/availabilitySets', format('{0}-as', parameters('projectName')))]"
-        },
+        "availabilitySet": "[if(equals(variables('deployClusterResources'), true()), variables('availabilitySetJson'), null())]",
         "hardwareProfile": {
           "vmSize": "[variables('virtualMachineSizeSpecs')]"
         },
@@ -320,12 +330,12 @@
         "networkProfile": {
           "networkInterfaces": [
             {
-              "id": "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-node{1}-nic', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()]))]"
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', if(variables('deployClusterResources'), format('{0}-node{1}-nic', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()]), format('{0}-srv-nic', parameters('projectName'))))]"
             }
           ]
         },
         "osProfile": {
-          "computerName": "[format('{0}-node{1}', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()])]",
+          "computerName": "[if(variables('deployClusterResources'), format('{0}-node{1}', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()]), format('{0}-srv', parameters('projectName')))]",
           "adminUsername": "[parameters('adminUsername')]",
           "adminPassword": "[parameters('adminPassword')]",
           "windowsConfiguration": {
@@ -337,17 +347,17 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Compute/availabilitySets', format('{0}-as', parameters('projectName')))]",
-        "hivemq_node_networkInterface"
+        "hivemq_vm_networkInterface"
       ]
     },
     {
       "copy": {
-        "name": "hivemq_node_setup",
+        "name": "hivemq_vm_setup",
         "count": "[length(range(0, variables('numberOfHivemqNodes')))]"
       },
       "type": "Microsoft.Compute/virtualMachines/extensions",
       "apiVersion": "2023-09-01",
-      "name": "[format('{0}-node{1}/InstallHiveMQ', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()])]",
+      "name": "[if(variables('deployClusterResources'), format('{0}-node{1}/InstallHiveMQ', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()]), format('{0}-srv/InstallHiveMQ', parameters('projectName')))]",
       "location": "[parameters('location')]",
       "properties": {
         "publisher": "Microsoft.Compute",
@@ -358,13 +368,13 @@
           "fileUris": [
             "[variables('setupScriptLink')]"
           ],
-          "commandToExecute": "[format('powershell.exe -ExecutionPolicy Bypass -File hivemq_node_setup.ps1 \"{0}\" \"{1}\" \"{2}\" -Scope Process -Force', parameters('hivemqVersion'), format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix=core.windows.net', variables('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-01-01').keys[0].value), variables('storageBlobContainerName'))]"
+          "commandToExecute": "[if(variables('deployClusterResources'), format('powershell.exe -ExecutionPolicy Bypass -File hivemq_node_setup.ps1 \"{0}\" \"{1}\" \"{2}\" -Scope Process -Force', parameters('hivemqVersion'), format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix=core.windows.net', variables('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-01-01').keys[0].value), variables('storageBlobContainerName')), format('powershell.exe -ExecutionPolicy Bypass -File hivemq_standalone_setup.ps1 \"{0}\" -Scope Process -Force', parameters('hivemqVersion')))]"
         }
       },
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageAccountName'), 'default', variables('storageBlobContainerName'))]",
-        "hivemq_node",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "hivemq_vm"
       ]
     },
     {
@@ -375,7 +385,7 @@
       "condition": "[and(equals(parameters('securityType'), 'TrustedLaunch'), and(equals(variables('securityProfileJson').uefiSettings.secureBootEnabled, true()), equals(variables('securityProfileJson').uefiSettings.vTpmEnabled, true())))]",
       "type": "Microsoft.Compute/virtualMachines/extensions",
       "apiVersion": "2023-09-01",
-      "name": "[format('{0}-node{1}/GuestAttestation', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()])]",
+      "name": "[if(variables('deployClusterResources'), format('{0}-node{1}/GuestAttestation', parameters('projectName'), range(0, variables('numberOfHivemqNodes'))[copyIndex()]), format('{0}-srv/GuestAttestation', parameters('projectName')))]",
       "location": "[parameters('location')]",
       "properties": {
         "publisher": "[variables('extensionPublisher')]",
@@ -399,7 +409,7 @@
         }
       },
       "dependsOn": [
-        "hivemq_node"
+        "hivemq_vm"
       ]
     },
     {
